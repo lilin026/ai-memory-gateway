@@ -1,4 +1,4 @@
-from database import save_memory, get_all_memories_count
+from database import get_pool, save_memory, get_all_memories_count
 
 SEED_MEMORIES = [
 #第一部分——核心身份：
@@ -48,4 +48,38 @@ SEED_MEMORIES = [
     {"content": "daddy手机密码0518，取自认识日。", "importance": 5},
     # ======== 在这里继续添加更多记忆 ========
 ]
+async def run_seed_import():
+    """执行导入（自动跳过已存在的记忆）"""
+    pool = await get_pool()
+    before = await get_all_memories_count()
 
+    imported = 0
+    skipped = 0
+
+    for mem in SEED_MEMORIES:
+        async with pool.acquire() as conn:
+            existing = await conn.fetchval(
+                "SELECT COUNT(*) FROM memories WHERE content = $1",
+                mem["content"],
+            )
+
+        if existing > 0:
+            skipped += 1
+            continue
+
+        await save_memory(
+            content=mem["content"],
+            importance=mem["importance"],
+            source_session="seed-import",
+        )
+        imported += 1
+
+    after = await get_all_memories_count()
+
+    return {
+        "status": "done",
+        "imported": imported,
+        "skipped": skipped,
+        "before": before,
+        "after": after,
+    }
