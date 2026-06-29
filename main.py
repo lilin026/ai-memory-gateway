@@ -1120,8 +1120,8 @@ async def chat_completions(request: Request):
         _strip_cache_control(body.get("messages", []))
     
     # ---------- 转发请求 ----------
-     # ---------- OpenRouter sticky routing（提高缓存命中率） ----------
-     if "openrouter" in API_BASE_URL:
+    # ---------- OpenRouter sticky routing（提高缓存命中率） ----------
+    if "openrouter" in API_BASE_URL:
         if "extra_body" not in body:
             body["extra_body"] = {}
         body["extra_body"]["session_id"] = f"memory-gw-{session_id}"
