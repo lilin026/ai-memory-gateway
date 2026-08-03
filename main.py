@@ -371,6 +371,14 @@ def _is_anthropic_model(model: str) -> bool:
     """判断是否为 Anthropic Claude 系列模型（只有 Claude 支持 cache_control）"""
     model_lower = model.lower()
     return "claude" in model_lower or "anthropic" in model_lower
+    def _has_image_content(messages: list) -> bool:
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") in ("image_url", "image"):
+                    return True
+    return False
 
 
 def _strip_cache_control(messages: list):
@@ -1132,6 +1140,12 @@ async def chat_completions(request: Request):
     # ---------- cache_control 兼容性处理 ----------
     if CACHE_PARTITION_ENABLED and not _is_anthropic_model(model):
         _strip_cache_control(body.get("messages", []))
+          # ---------- OpenRouter 图片 provider 兼容 ----------
+    if "openrouter" in API_BASE_URL and "provider" not in body:
+        if _has_image_content(body.get("messages", [])):
+            body["provider"] = {"order": ["Amazon Bedrock"], "allow_fallbacks": True}
+            print("🖼️ 检测到图片，优先使用 Amazon Bedrock provider")
+
     
     # ---------- 转发请求 ----------
     headers = {
