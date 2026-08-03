@@ -526,6 +526,34 @@ def _apply_breakpoint(msg: dict) -> bool:
     return False
 
 
+def _build_user_content_with_extras(original_content, extra_text_parts: list):
+    """Build user message content, preserving image/non-text blocks from multimodal input."""
+    combined_text = "\n\n".join(p for p in extra_text_parts if p)
+
+    if isinstance(original_content, str):
+        return (combined_text + "\n\n" + original_content) if combined_text else original_content
+
+    if isinstance(original_content, list):
+        text_parts = []
+        non_text_blocks = []
+        for item in original_content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+                else:
+                    non_text_blocks.append(item)
+
+        user_text = " ".join(text_parts)
+        full_text = (combined_text + "\n\n" + user_text) if combined_text else user_text
+
+        if non_text_blocks:
+            return [{"type": "text", "text": full_text}] + non_text_blocks
+        else:
+            return full_text
+
+    return combined_text or ""
+
+
 async def build_partitioned_messages(
     session_id: str,
     all_messages: list,
@@ -662,23 +690,16 @@ async def build_partitioned_messages(
         result.append(m)
     
     if current_user_msg:
-        parts = [build_time_injection()]
-        
+        extra_parts = [build_time_injection()]
+
         if MEMORY_ENABLED and MEMORY_EXTRACT_ENABLED and user_message:
             mem_text = await build_memory_text(user_message)
             if mem_text:
-                parts.append(mem_text)
-        
-        current_text = current_user_msg['content']
-        if isinstance(current_text, list):
-            current_text = " ".join(
-                item.get("text", "") for item in current_text
-                if isinstance(item, dict) and item.get("type") == "text"
-            )
-        
-        parts.append(current_text)
-        result.append({"role": "user", "content": "\n\n".join(parts)})
-    
+                extra_parts.append(mem_text)
+
+        content = _build_user_content_with_extras(current_user_msg['content'], extra_parts)
+        result.append({"role": "user", "content": content})
+
     bp_count = 1 + (1 if summary_parts else 0) + (1 if cleaned_a else 0) + (1 if b_msgs else 0)
     summary_total = sum(len(p) for p in summary_parts)
     tool_stripped = len(a_msgs) - len(cleaned_a)
@@ -712,23 +733,16 @@ async def _build_basic_cached(
         result.append(m)
     
     if current_user_msg:
-        parts = [build_time_injection()]
-        
+        extra_parts = [build_time_injection()]
+
         if MEMORY_ENABLED and MEMORY_EXTRACT_ENABLED and user_message:
             mem_text = await build_memory_text(user_message)
             if mem_text:
-                parts.append(mem_text)
-        
-        current_text = current_user_msg['content']
-        if isinstance(current_text, list):
-            current_text = " ".join(
-                item.get("text", "") for item in current_text
-                if isinstance(item, dict) and item.get("type") == "text"
-            )
-        
-        parts.append(current_text)
-        result.append({"role": "user", "content": "\n\n".join(parts)})
-    
+                extra_parts.append(mem_text)
+
+        content = _build_user_content_with_extras(current_user_msg['content'], extra_parts)
+        result.append({"role": "user", "content": content})
+
     bp_count = 1 + (1 if history else 0)
     print(f"🔒 基础缓存(降级): BP×{bp_count} | 历史{len(history)}条 | 总{len(result)}条messages")
     return result
@@ -1120,12 +1134,7 @@ async def chat_completions(request: Request):
         _strip_cache_control(body.get("messages", []))
     
     # ---------- 转发请求 ----------
-    # ---------- OpenRouter sticky routing（提高缓存命中率） ----------
-    if "openrouter" in API_BASE_URL:
-        if "extra_body" not in body:
-            body["extra_body"] = {}
-        body["extra_body"]["session_id"] = f"memory-gw-{session_id}"
-        headers = {
+    headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
     }
