@@ -371,7 +371,7 @@ def _is_anthropic_model(model: str) -> bool:
     """判断是否为 Anthropic Claude 系列模型（只有 Claude 支持 cache_control）"""
     model_lower = model.lower()
     return "claude" in model_lower or "anthropic" in model_lower
-    def _has_image_content(messages: list) -> bool:
+def _has_image_content(messages: list) -> bool:
     for msg in messages:
         content = msg.get("content")
         if isinstance(content, list):
